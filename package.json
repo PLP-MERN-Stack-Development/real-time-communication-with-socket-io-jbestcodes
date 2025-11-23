@@ -1,0 +1,26 @@
+{
+  "name": "real-time-communication-with-socket-io-jbestcodes",
+  "version": "1.0.0",
+  "description": "This assignment focuses on building a real-time chat application using Socket.io, implementing bidirectional communication between clients and server.",
+  "main": "test-server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PLP-MERN-Stack-Development/real-time-communication-with-socket-io-jbestcodes.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/PLP-MERN-Stack-Development/real-time-communication-with-socket-io-jbestcodes/issues"
+  },
+  "homepage": "https://github.com/PLP-MERN-Stack-Development/real-time-communication-with-socket-io-jbestcodes#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}

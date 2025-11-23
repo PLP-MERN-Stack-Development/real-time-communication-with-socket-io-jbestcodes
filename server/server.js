@@ -1,132 +1,130 @@
-// server.js - Main server file for Socket.io chat application
-
+// JBest Chat Server - Week 5 Assignment
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
+const socketIo = require('socket.io');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const path = require('path');
 
-// Load environment variables
-dotenv.config();
-
-// Initialize Express app
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
+
+// Configure Socket.io with CORS
+const io = socketIo(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+    origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"],
+    methods: ["GET", "POST"],
+    credentials: false
+  }
 });
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// Store connected users and messages
-const users = {};
+// Store active users and messages
+const activeUsers = new Map();
 const messages = [];
-const typingUsers = {};
 
-// Socket.io connection handler
+// Basic API route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'JBest Chat Server is running!',
+    status: 'online',
+    users: activeUsers.size,
+    totalMessages: messages.length
+  });
+});
+
+// Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  console.log(`� User connected: ${socket.id}`);
 
   // Handle user joining
-  socket.on('user_join', (username) => {
-    users[socket.id] = { username, id: socket.id };
-    io.emit('user_list', Object.values(users));
-    io.emit('user_joined', { username, id: socket.id });
-    console.log(`${username} joined the chat`);
+  socket.on('join', (userData) => {
+    const { username } = userData;
+    
+    // Store user info
+    activeUsers.set(socket.id, {
+      id: socket.id,
+      username: username,
+      joinedAt: new Date().toISOString()
+    });
+
+    console.log(`👋 ${username} joined the chat`);
+    
+    // Notify all users about the new user
+    socket.broadcast.emit('userJoined', {
+      username: username,
+      message: `${username} joined the chat`,
+      timestamp: new Date().toISOString()
+    });
+
+    // Send current users list to the new user
+    socket.emit('usersList', Array.from(activeUsers.values()));
+    
+    // Send recent messages to the new user
+    socket.emit('messageHistory', messages.slice(-20)); // Send last 20 messages
   });
 
-  // Handle chat messages
-  socket.on('send_message', (messageData) => {
+  // Handle new messages
+  socket.on('sendMessage', (messageData) => {
+    const user = activeUsers.get(socket.id);
+    if (!user) return;
+
     const message = {
-      ...messageData,
       id: Date.now(),
-      sender: users[socket.id]?.username || 'Anonymous',
-      senderId: socket.id,
-      timestamp: new Date().toISOString(),
+      username: user.username,
+      message: messageData.message,
+      timestamp: new Date().toISOString()
     };
-    
+
+    // Store message
     messages.push(message);
     
-    // Limit stored messages to prevent memory issues
+    // Keep only last 100 messages in memory
     if (messages.length > 100) {
       messages.shift();
     }
-    
-    io.emit('receive_message', message);
+
+    console.log(`💬 ${user.username}: ${message.message}`);
+
+    // Broadcast message to all users
+    io.emit('newMessage', message);
   });
 
-  // Handle typing indicator
+  // Handle typing indicators
   socket.on('typing', (isTyping) => {
-    if (users[socket.id]) {
-      const username = users[socket.id].username;
-      
-      if (isTyping) {
-        typingUsers[socket.id] = username;
-      } else {
-        delete typingUsers[socket.id];
-      }
-      
-      io.emit('typing_users', Object.values(typingUsers));
-    }
-  });
+    const user = activeUsers.get(socket.id);
+    if (!user) return;
 
-  // Handle private messages
-  socket.on('private_message', ({ to, message }) => {
-    const messageData = {
-      id: Date.now(),
-      sender: users[socket.id]?.username || 'Anonymous',
-      senderId: socket.id,
-      message,
-      timestamp: new Date().toISOString(),
-      isPrivate: true,
-    };
-    
-    socket.to(to).emit('private_message', messageData);
-    socket.emit('private_message', messageData);
+    socket.broadcast.emit('userTyping', {
+      username: user.username,
+      isTyping: isTyping
+    });
   });
 
   // Handle disconnection
   socket.on('disconnect', () => {
-    if (users[socket.id]) {
-      const { username } = users[socket.id];
-      io.emit('user_left', { username, id: socket.id });
-      console.log(`${username} left the chat`);
+    const user = activeUsers.get(socket.id);
+    
+    if (user) {
+      console.log(`👋 ${user.username} left the chat`);
+      
+      // Remove user from active users
+      activeUsers.delete(socket.id);
+      
+      // Notify other users
+      socket.broadcast.emit('userLeft', {
+        username: user.username,
+        message: `${user.username} left the chat`,
+        timestamp: new Date().toISOString()
+      });
     }
-    
-    delete users[socket.id];
-    delete typingUsers[socket.id];
-    
-    io.emit('user_list', Object.values(users));
-    io.emit('typing_users', Object.values(typingUsers));
   });
-});
-
-// API routes
-app.get('/api/messages', (req, res) => {
-  res.json(messages);
-});
-
-app.get('/api/users', (req, res) => {
-  res.json(Object.values(users));
-});
-
-// Root route
-app.get('/', (req, res) => {
-  res.send('Socket.io Chat Server is running');
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 JBest Chat Server running on port ${PORT}`);
+  console.log(`📱 Frontend should connect to http://localhost:${PORT}`);
 });
-
-module.exports = { app, server, io }; 
