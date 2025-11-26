@@ -1,20 +1,30 @@
 import { useState, useEffect } from 'react'
 import io from 'socket.io-client'
+import { ClerkProvider, SignedIn, SignedOut, useUser, SignInButton, UserButton } from '@clerk/clerk-react'
 
-function App() {
+// Import Clerk Publishable Key from environment variables
+const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+// Chat Component (protected by authentication)
+function ChatApp() {
+  const { user, isLoaded } = useUser() // Get user from Clerk
   const [socket, setSocket] = useState(null)
   const [messages, setMessages] = useState([])
   const [inputMessage, setInputMessage] = useState('')
-  const [username, setUsername] = useState('')
   const [isConnected, setIsConnected] = useState(false)
   const [onlineUsers, setOnlineUsers] = useState([])
   const [hasJoined, setHasJoined] = useState(false)
 
-  // Initialize socket connection
+  // Get username from Clerk user data
+  const username = user?.firstName || user?.username || user?.emailAddresses[0]?.emailAddress || 'Anonymous'
+
+  // Initialize socket connection when user is loaded
   useEffect(() => {
-    console.log('🔄 Starting Socket.io connection test...')
+    if (!isLoaded || !user) return
+
+    console.log('🔄 Starting Socket.io connection for user:', username)
     
-    // Test basic connection first
+    // Create socket connection
     const testSocket = io('http://localhost:5000', {
       transports: ['polling'], // Use only polling for simplicity
       timeout: 3000,
@@ -97,12 +107,12 @@ function App() {
     })
 
     return () => testSocket.close()
-  }, [])
+  }, [isLoaded, user, username])
 
   const joinChat = (e) => {
     if (e) e.preventDefault()
-    if (username.trim().length >= 2 && socket && isConnected) {
-      socket.emit('join', { username: username.trim() })
+    if (username && socket && isConnected) {
+      socket.emit('join', { username: username })
       setHasJoined(true)
     }
   }
@@ -120,7 +130,7 @@ function App() {
     }
   }
 
-  // If not joined yet, show join form
+  // If not joined yet, show join form (simplified for authenticated users)
   if (!hasJoined) {
     return (
       <div style={{
@@ -139,48 +149,30 @@ function App() {
           textAlign: 'center',
           minWidth: '300px'
         }}>
-          <h2 style={{ margin: '0 0 1rem 0', color: '#2d3748' }}>💬 Join JBest Chat</h2>
+          <h2 style={{ margin: '0 0 1rem 0', color: '#2d3748' }}>💬 Welcome to JBest Chat</h2>
+          <p style={{ margin: '0 0 1.5rem 0', color: '#718096' }}>
+            Hello, {username}!
+          </p>
           <p style={{ margin: '0 0 1.5rem 0', color: '#718096' }}>
             Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
           </p>
-          <div style={{ margin: '0 0 1rem 0', fontSize: '0.8rem', color: '#4a5568' }}>
-            Debug: Socket={socket ? 'Yes' : 'No'} | Connected={isConnected ? 'Yes' : 'No'} | Username Length={username.length}
-          </div>
-          <form onSubmit={joinChat}>
-            <input
-              type="text"
-              placeholder="Enter your name (min 2 characters)..."
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '2px solid #e2e8f0',
-                borderRadius: '8px',
-                marginBottom: '1rem',
-                fontSize: '1rem',
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!username.trim() || username.trim().length < 2 || !isConnected}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                background: (username.trim().length >= 2 && isConnected) ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#e2e8f0',
-                color: (username.trim().length >= 2 && isConnected) ? 'white' : '#a0aec0',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: (username.trim().length >= 2 && isConnected) ? 'pointer' : 'not-allowed',
-                fontSize: '1rem',
-                fontWeight: '500'
-              }}
-            >
-              Join Chat Room
-            </button>
-          </form>
+          <button
+            onClick={joinChat}
+            disabled={!isConnected}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              background: isConnected ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' : '#e2e8f0',
+              color: isConnected ? 'white' : '#a0aec0',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: isConnected ? 'pointer' : 'not-allowed',
+              fontSize: '1rem',
+              fontWeight: '500'
+            }}
+          >
+            {isConnected ? 'Join Chat Room' : 'Connecting...'}
+          </button>
         </div>
       </div>
     )
@@ -209,28 +201,15 @@ function App() {
             {isConnected ? '🟢 Connected' : '🔴 Disconnected'} • {onlineUsers.length} online
           </p>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <p style={{ margin: 0, color: '#4a5568', fontWeight: '500' }}>Welcome, {username}!</p>
-          <button
-            onClick={() => {
-              setHasJoined(false)
-              setUsername('')
-              setMessages([])
-              setOnlineUsers([])
+          <UserButton 
+            appearance={{
+              elements: {
+                avatarBox: "width: 32px; height: 32px;"
+              }
             }}
-            style={{
-              background: '#f56565',
-              color: 'white',
-              border: 'none',
-              padding: '0.25rem 0.5rem',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              marginTop: '0.25rem'
-            }}
-          >
-            Leave
-          </button>
+          />
         </div>
       </div>
 
@@ -320,6 +299,91 @@ function App() {
         </button>
       </form>
     </div>
+  )
+}
+
+// Main App component with Clerk Provider
+function App() {
+  if (!clerkPubKey) {
+    return (
+      <div style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'Arial, sans-serif'
+      }}>
+        <div style={{
+          background: 'white',
+          padding: '2rem',
+          borderRadius: '15px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+          textAlign: 'center',
+          minWidth: '400px'
+        }}>
+          <h2 style={{ margin: '0 0 1rem 0', color: '#e53e3e' }}>⚠️ Configuration Error</h2>
+          <p style={{ margin: '0 0 1.5rem 0', color: '#718096' }}>
+            Please set your VITE_CLERK_PUBLISHABLE_KEY in the .env.local file
+          </p>
+          <p style={{ fontSize: '0.9rem', color: '#4a5568' }}>
+            1. Create a Clerk account at <a href="https://dashboard.clerk.com/" target="_blank" rel="noopener noreferrer">dashboard.clerk.com</a><br/>
+            2. Get your publishable key<br/>
+            3. Add it to client/.env.local
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ClerkProvider publishableKey={clerkPubKey}>
+      <div style={{ minHeight: '100vh' }}>
+        <SignedOut>
+          <div style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'Arial, sans-serif'
+          }}>
+            <div style={{
+              background: 'white',
+              padding: '2rem',
+              borderRadius: '15px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+              textAlign: 'center',
+              minWidth: '300px'
+            }}>
+              <h1 style={{ margin: '0 0 1rem 0', color: '#2d3748' }}>💬 JBest Chat</h1>
+              <p style={{ margin: '0 0 2rem 0', color: '#718096' }}>
+                Professional Communication Platform
+              </p>
+              <SignInButton mode="modal">
+                <button style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: '500'
+                }}>
+                  Sign In to Chat
+                </button>
+              </SignInButton>
+            </div>
+          </div>
+        </SignedOut>
+        
+        <SignedIn>
+          <ChatApp />
+        </SignedIn>
+      </div>
+    </ClerkProvider>
   )
 }
 
